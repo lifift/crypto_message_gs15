@@ -19,7 +19,7 @@ def generate_params(p,q):
     while g<=1 :
         h+=1
         g = pow(h, z, p)
-    x = random.randrange(q>>1, q ) # partie privé de la clé. Un entier aléatoire de l'orde de grandeur de q
+    x = random.randrange(p>>1, p ) # partie privé de la clé. Un entier aléatoire de l'orde de grandeur de q
     ## TODO  peut on remplacer x par une clé privé de 2048 bit ?????
     y = pow(g, x, p) # partie publique de la clé
     return ( p, q, g, y, x )
@@ -49,6 +49,7 @@ if __name__=="__main__":
     #p=451425837041 
     #q=797 
     ( p, q, g, y, x ) =  generate_params(p,q)
+    print("x: ",x,"\ny: ",y)
     ( sign1,sign2 )   =  generate_sign(2**256,p,q,g,x)
     #print(sign1,sign2)
     print(verify_sign(2**256, sign1, sign2, y, p , g ))
