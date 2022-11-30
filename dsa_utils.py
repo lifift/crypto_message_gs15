@@ -26,6 +26,10 @@ def generate_params(p,q):
 
 def generate_sign(message, p, q, g, x):
     sign1 = 0
+
+    #TEMP
+    message=1
+
     while sign1==0 or sign2==0 : 
         k = random.randrange( 1, q-1 )
         sign1 = pow(g, k, p) % q # The first part of the DSA signature
@@ -34,6 +38,10 @@ def generate_sign(message, p, q, g, x):
     return (sign1, sign2)
 
 def verify_sign(message, sign1, sign2, pub_key, p , g):
+
+    #TEMP
+    message=1
+
     w = pow(sign2, -1, q)
     u1 = (message * w) % q
     u2 = (sign1 * w) % q
