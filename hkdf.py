@@ -14,26 +14,29 @@ def hmac_sha512(key, data): #  Besoin d'une fonction de hashage + le HMAC qui pr
     return output
 
 
-def hkdf(length: int,key, salt: bytes = b"") -> bytes:
+def hkdf(length= int(),key= int(), salt= int()) -> int:
     """Key derivation function"""
-    if len(salt) == 0:
+    if salt == 0:
         salt = bytes([0] * hash_len)
-    #hashed = hmac_sha512(salt,key)
-    hashed = hashlib.sha512(key).digest()
+    else : 
+        salt = int.to_bytes(salt,2049,'little')
+    key = int.to_bytes(key,2049,'little')
+    hashed = hmac_sha512(salt,key)
+    #hashed = hashlib.sha512(key).digest()
     t = b""
     output = b""
     for i in range(ceil(length / hash_len)): #ceil() c'est un aroundi
-        #t = hmac_sha512(hashed, t + bytes([i + 1])) #si on ne fait pas de fonction hmac on pourrait remplacer par  : hashed+t+bytes([i + 1])
-        t = hashlib.sha512(hashed+t+bytes([i + 1])).digest() #VERSION SANS HMAC...
+        t = hmac_sha512(hashed, t + bytes([i + 1])) #si on ne fait pas de fonction hmac on pourrait remplacer par  : hashed+t+bytes([i + 1])
+        #t = hashlib.sha512(hashed+t+bytes([i + 1])).digest() #VERSION SANS HMAC...
         output += t
     return output[:length]
 if __name__=='__main__':
-    K=bytes.fromhex('0a'*3000) #des bytes attention 
+    K=bytes.fromhex('0a'*2048) #des bytes attention 
     print (len(K))
 
     okm = hkdf( length=4096, # on prend une longueur de 4096 pour se fournir 2 clés de 2048 bits
-            key=K,
-            salt=bytes.fromhex(''),
+            key=int.from_bytes(K,'little'),
+            salt=2**511,
             )
 
     print(int.from_bytes(okm, 'little'))

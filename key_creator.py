@@ -25,7 +25,7 @@ def key_creator( KeyType:int(), p, g ):
     elif KeyType == 3 : KeySize = 512 # same
     else              : KeySize = 512 # same
 
-    priv = random.randrange( 2**(KeySize-1), p ) #p is 3072 bit prime so no need to check if our candidate is inferior
+    priv = random.randrange( 2**(KeySize-1), p ) 
 
     pub  = modular_power( g, priv, p )
 

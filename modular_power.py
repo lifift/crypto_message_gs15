@@ -1,5 +1,5 @@
 """ 
-Function to calculate x**y mod p
+Function to calculate x^y mod p
 """
 def modular_power(x, y, p):
     result = 1
