@@ -31,14 +31,19 @@ def hkdf(length= int(),key= int(), salt= int()) -> int:
         output += t
     return output[:length]
 if __name__=='__main__':
-    K=int.to_bytes((2**2048)-7896,512,'big') #des bytes attention
-    print(bin(int.from_bytes(K,'little')))
-    print (len(K))
+    K=int.to_bytes((2**2048)-7896,512,'little') #des bytes attention
+    #print(bin(int.from_bytes(K,'little')))
+    #print (len(K))
 
     okm = hkdf( length=4096, # on prend une longueur de 4096 pour se fournir 2 clés de 2048 bits
             key=int.from_bytes(K,'little'),
             salt=2**511,
             )
-
-    print(int.from_bytes(okm, 'little'))
+    
     print(len(okm))
+    root_key    = okm[:int((len(okm)/2))]
+    session_key = okm[(int(len(okm)/2)):]
+
+    #print(int.from_bytes(okm, 'little'))
+    print( len(root_key) , "   " ,len(session_key))
+    #

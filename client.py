@@ -10,6 +10,8 @@ from dsa_utils import verify_sign
 p = 25609898604414818356342675008980494897320973700032729042741978847955470690563539315503075260137954424218767802738997491883941727288933895582915811782129793113275820909132179284450321438003081904632732477602364083710534888696619971023354520651427561951597944508962735793879190401444321968298703993398341618781322304367199429931812771382884008170204285496824709993303257154803236932656743437511594862201976855434608648427127824768146417075316608933153693677113483567374237103917039356104683891533551327116768970260095980834507885270535254322555436964641024641901789777790118207151853051452357282161018449250985923122741
 q = 10898621702918512854645648131019767490988342061643920779545576456895643674524554995206186169110085936609320715829241238089007233226152798270438965200688221
 g = 2
+
+APP_SALT = 2**511
 # selecting a user
 
 
@@ -144,15 +146,15 @@ def send_msg():#chiffrer / ratchet et tout et tout
     elif "o" in conv :
         new_eph = False # Il y a un message non acquitté, donc on reste sur la même session (peut-être)
     
-    # ratchet
-    with open (personnal_keys,'r') as f :
+    # START DOUUBLE RATCHET
+    with open (personnal_keys,'r') as f : # ici on essaie de chopper les valeurs du ratchet précédent si elles existent 
         for line in f.readlines():
             if line.split(",")[0] == receiver : # FORMAT : name,root_key, his public id, the session last key
                 root_key    = int(line.split(",")[1]) # aller retrouver la root_key actuelle
                 id_pub      = int(line.split(",")[2]) # retrouver l'ID publique de l'autre 
                 session_key = int(line.split(",")[3]) # retrouver le dernier secret partagé utilisé 
 
-    if new_eph and not init_message: #not init_message car on fait tout dans le x3dh dans ce cas
+    if new_eph and not init_message: #not init_message car on fait tout dans le x3dh dans ce cas là
         (eph_priv,eph_pub) = key_creator(4,p,g) # Création d'un clé éphémère 
         session_key = diffie_hellman(eph_priv,id_pub) #le secret partagé pour update le ratchet
     
@@ -160,13 +162,37 @@ def send_msg():#chiffrer / ratchet et tout et tout
         # X3DH si premier message ............
         (root_key,id_pub,session_key,num_otPK,eph_pub) = x3dh(receiver) #TODO  aie aie aie aie aie aiea aie
         keys += str(num_otPK)+":"+str(eph_pub)+":"
-    if not init_message :
-        x = hkdf(4096,root_key,session_key)
-        root_key = x[:2048]
-        comm_key = x[2048:] #Enfin on a la clé de chiffrement du message 
+        #Le HKDF sur la root_key est effectué dans le x3dh (je crois)
+        x = hkdf(4096,session_key,APP_SALT)
+        session_key = x[:2048]
+        comm_key = x[2048:]
 
+    # END DOUBLE RATCHET
+
+    if not init_message :
+        keys += "NONE:NONE:"
+        if not new_eph :#si on garde notre session on ne met que la session key à jour 
+            x = hkdf(4096,session_key,APP_SALT)
+            session_key = x[:2048]
+            comm_key = x[2048:] #Enfin on a la clé de chiffrement du message 
+        if new_eph : #si une nouvelle session on fait le ratchet root key puis le ratchet comm key
+            # Premier HKDF
+            x = hkdf(4096,root_key,session_key)
+            root_key = x[:2048]
+            session_key = x[2048:]
+
+            # Second HKDF
+            x = hkdf(4096,session_key,APP_SALT)
+            session_key = x[:2048]
+            comm_key = x[2048:]
 
     # MAJ des keys local pour cette conversation
+
+    """
+    ATTENTION
+    Il faudrait normalement conserver les clés précédantes pendant un petit moment. 
+    On ignore le problèmes d'un mauvais ordre d'arrivé des messages pour le moment.
+    """
     payload = receiver+","+str(root_key)+","+str(id_pub)+","+str(session_key)+"\n"# FORMAT : name,root_key, his public id, the session last key
     with open(personnal_keys,'r') as f : 
         lines = f.readlines()
@@ -184,11 +210,16 @@ def send_msg():#chiffrer / ratchet et tout et tout
     if not new_eph and not init_message:
         eph_pub = "NONE" #on remplace la clé éphemère par un token NONE
     
+    
+
     keys += str(eph_pub) #on fini de preparer la variable keys qui contiend toute les clés à transférer
 
 
     # chiffrement
-    # Signature ....
+
+
+
+    # Signature 
     (x,y)=generate_sign(data,p,q,g,my_id_priv)
     signature=str(x)+":"+str(y) # on concatène les deux parties de la signature 
 
