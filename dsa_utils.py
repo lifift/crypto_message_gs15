@@ -24,7 +24,7 @@ def generate_params(p,q):
     y = pow(g, x, p) # partie publique de la clé
     return ( p, q, g, y, x )
 
-def generate_sign(message, p, q, g, x):
+def generate_sign(message, p, q, g, private_key):
     sign1 = 0
 
     #TEMP
@@ -33,7 +33,7 @@ def generate_sign(message, p, q, g, x):
     while sign1==0 or sign2==0 : 
         k = random.randrange( 1, q-1 )
         sign1 = pow(g, k, p) % q # The first part of the DSA signature
-        sign2 = ( pow(k, -1, q) * (message+x*sign1) ) % q # The second part of the DSA signature
+        sign2 = ( pow(k, -1, q) * (message+private_key*sign1) ) % q # The second part of the DSA signature
         w = pow(sign2, -1, q)
     return (sign1, sign2)
 

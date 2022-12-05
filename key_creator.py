@@ -21,9 +21,9 @@ def key_creator( KeyType:int(), p, g ):
 
     KeySize = 0  # size of the key in bits
     if   KeyType == 1 : KeySize = 2048
-    elif KeyType == 2 : KeySize = 512 # need to talk about this one ? always 2048 ?
-    elif KeyType == 3 : KeySize = 512 # same
-    else              : KeySize = 512 # same
+    elif KeyType == 2 : KeySize = 2048 # need to talk about this one ? always 2048 ?
+    elif KeyType == 3 : KeySize = 2048 # same
+    else              : KeySize = 2048 # same
 
     priv = random.randrange( 2**(KeySize-1), p ) 
 

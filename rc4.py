@@ -19,13 +19,26 @@ def rc4(key:bytes, message:bytes):
         S[i] = S[j]
         S[j] = temp
         K = S[(S[i]+S[j])%256]
-        output += int.to_bytes(message[x]^K)
+        output += int.to_bytes(message[x]^K,1,'little')
     return output
     
 
 if __name__== "__main__" :
     key=b'hello'
-    message=b'je ne mange pas de glace a la vanille'
+    message=b'                                                  '*10000
+    count = [0]*256
     result= rc4(key,message)
-    print (result)
-    print(rc4(key,result))
+    #print (result)
+    for byte in result :
+        count[int(byte)]+=1
+    mean = 0
+    for x in count :
+        mean += x
+    mean = mean /256
+    ecartType = 0
+    for x in count :
+        ecartType += (x-mean)**2
+    ecartType=(ecartType/256)**0.5
+    print(ecartType)
+    print(count)
+    #print(rc4(key,result))

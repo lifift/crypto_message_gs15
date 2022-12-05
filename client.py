@@ -3,6 +3,8 @@ import time
 import random
 from key_creator import key_creator
 from dh import diffie_hellman
+from dh import x3dh_send
+from dh import x3dh_receive
 from hkdf import hkdf
 from dsa_utils import generate_sign
 from dsa_utils import verify_sign
@@ -64,7 +66,7 @@ def check_conv(friend=str(),mode=int()):
             pass
 
 def read_msg(message=str()):
-    #format d'un message : origin,dest,id,date,data,type
+    #FORMAT : origin,dest,id,date,data,type,keys,signature
     sender   = message.split(',')[0]
     receiver = message.split(',')[1]
     msg_id   = message.split(',')[2] # id  aléatoire, random+hash du message ?
@@ -86,35 +88,132 @@ def read_msg(message=str()):
                         f.write(line.replace(msg_id+",False",msg_id+",True"))
                 except :
                     pass
+
+    if msg_type == "INIT": #besoin d'un init ? 
+        #FORMAT : origin,dest,id,date,data,type,keys,signature
+
+        sender_id_pub = keys.split(":")[1]
+
+        #faire le x3dh
+        (root_key,session_key)=x3dh_receive(personnal_keys, myID, keys, my_id_priv, my_pre_priv)
+
+        # HKDF session => (session+comm_key) 
+        x = hkdf(4096,session_key,APP_SALT)
+        (session_key,comm_key) = (int.from_bytes(x[:2048],'little'),int.from_bytes(x[2048:],'little')) 
+
+        #vérifier une signature ?
+        verified = verify_sign(data, signature.split(":")[0], signature.split(":")[1], sender_id_pub, p, g)
+        if not verified :
+            print("HACKER")
+            return
+
+
+        #Stocker les clé pour le futur
+        payload = sender+","+str(root_key)+","+sender_id_pub+","+str(session_key)+"\n"# FORMAT : name,root_key, his public id, the session last key
+        with open(personnal_keys,'a') as f : 
+            f.write(payload)
+
+        # déchiffrer le message.
+        # stocker le message en local
+        with open(personnal_msg,'a') as f:
+            output = "\n"+sender+","+receiver+","+ msg_id+","+"True"+","+date+","+data #sender, receiver, id, ack, date, msg 
+            f.write(output)
     
     if msg_type == "FILE":
+        
+
         # envoyer un ACK pour ce message
         with open(server_msg_path,'a') as f : # ouverture en mode "append" pour stocker notre  ACK sur le serveur
             output = "\n"+myID+","+sender+","+ msg_id+","+date.date+",ACK,ACK" 
+            f.write(output)
+
+        #FORMAT : origin,dest,id,date,data,type,keys,signature
+
         # aller chercher la clé du ratchet de cette conv,
         #  faire un tours de moulinnette pour avoir la clé de déchiffrement, et du prochain ratchet 
         # stocker la nouvelle clé de ratchet
         # déchiffrer le fichier.
         # stocker le fichier dans le dossier files avec un nom parlant => id.sender.receiver 
 
-    if msg_type == "INIT": #besoin d'un init ? on pourrait stocker le num de otPK dans la var keys ..
-        # premier message lors d'un communication
-        # On devrait donc avoir plusieurs info dans les datas : clé ephemère, numéro de l'oTPK utilisé
-        print("Faire des trucs ... Stocker la clé partagé/chainage dans un fichier")
 
-    if msg_type == "MSG":
+
+    if msg_type == "MSG": 
+
         # envoyer un ACK pour ce message
         with open(server_msg_path,'a') as f : # ouverture en mode "append" pour stocker notre  ACK sur le serveur
             output = "\n"+myID+","+sender+","+ msg_id+","+"date.date"+",ACK,ACK" #origin,dest,id,date,data=ACK,type=ACK
             f.write(output)
+        
+
+        #FORMAT : origin,dest,id,date,data,type,keys,signature
         # aller chercher la clé du ratchet de cette conv,
-        #  faire un tours de moulinnette pour avoir la clé de déchiffrement, et du prochain ratchet 
-        # stocker la nouvelle clé de ratchet
+        with open (personnal_keys,'r') as f : # ici on essaie de chopper les valeurs du ratchet précédent si elles existent 
+            for line in f.readlines():
+                if line.split(",")[0] == receiver : # FORMAT : name,root_key, his public id, the session last key
+                    root_key      = int(line.split(",")[1]) # aller retrouver la root_key actuelle
+                    sender_id_pub = int(line.split(",")[2]) # retrouver l'ID publique de l'autre 
+                    session_key   = int(line.split(",")[3]) # retrouver le dernier secret partagé utilisé 
+       
+        num_otPK     = keys.split(":")[0]
+        sender_id_pub= int(keys.split(":")[1])
+        eph_pub      = keys.split(":")[2]
+        # Check if it is a new session
+        new_session = True
+        if eph_pub=="NONE":
+            new_session = False
+
+        if new_session :
+            #  faire un tours de moulinnette pour avoir la clé de déchiffrement, et du prochain ratchet 
+            shared_key = diffie_hellman(my_id_priv,int(eph_pub)) 
+
+            # Premier HKDF
+            x = hkdf(4096,root_key,shared_key)#on fait le hkdf ave la shared_key 
+            root_key = int.from_bytes(x[:2048],'little')
+            session_key = int.from_bytes(x[2048:],'little')
+
+            # Second HKDF
+            x = hkdf(4096,session_key,APP_SALT)
+            session_key = int.from_bytes(x[:2048],'little')
+            comm_key = int.from_bytes(x[2048:],'little')
+        
+        if not new_session : #on ne fait que le second hkdf si on ne change pas de session
+            # Second HKDF
+            x = hkdf(4096,session_key,APP_SALT)
+            session_key = int.from_bytes(x[:2048],'little')
+            comm_key = int.from_bytes(x[2048:],'little')
+
+
+
+        #Stocker les clé pour le futur
+        payload = sender+","+str(root_key)+","+sender_id_pub+","+str(session_key)+"\n"# FORMAT : name,root_key, his public id, the session last key
+        with open(personnal_keys,'r') as f : 
+            lines = f.readlines()
+        with open(personnal_keys,'w') as f : 
+            for line in lines :
+                try:
+                    if line.split(",")[0] == sender :
+                        f.write(payload)
+                    else :
+                        f.write(line)
+                except:pass
+
         # déchiffrer le message.
         # stocker le message en local
         with open(personnal_msg,'a') as f:
             output = "\n"+sender+","+receiver+","+ msg_id+","+"True"+","+date+","+data #sender, receiver, id, ack, date, msg 
             f.write(output)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def send_msg():#chiffrer / ratchet et tout et tout 
@@ -146,7 +245,7 @@ def send_msg():#chiffrer / ratchet et tout et tout
     elif "o" in conv :
         new_eph = False # Il y a un message non acquitté, donc on reste sur la même session (peut-être)
     
-    # START DOUUBLE RATCHET
+    # START DOUBLE RATCHET
     with open (personnal_keys,'r') as f : # ici on essaie de chopper les valeurs du ratchet précédent si elles existent 
         for line in f.readlines():
             if line.split(",")[0] == receiver : # FORMAT : name,root_key, his public id, the session last key
@@ -154,37 +253,49 @@ def send_msg():#chiffrer / ratchet et tout et tout
                 id_pub      = int(line.split(",")[2]) # retrouver l'ID publique de l'autre 
                 session_key = int(line.split(",")[3]) # retrouver le dernier secret partagé utilisé 
 
-    if new_eph and not init_message: #not init_message car on fait tout dans le x3dh dans ce cas là
-        (eph_priv,eph_pub) = key_creator(4,p,g) # Création d'un clé éphémère 
-        session_key = diffie_hellman(eph_priv,id_pub) #le secret partagé pour update le ratchet
+
+
     
     if init_message :
         # X3DH si premier message ............
-        (root_key,id_pub,session_key,num_otPK,eph_pub) = x3dh(receiver) #TODO  aie aie aie aie aie aiea aie
-        keys += str(num_otPK)+":"+str(eph_pub)+":"
+        (root_key,id_pub,session_key,num_otPK,eph_pub) = x3dh_send(receiver,my_id_priv) #TODO  aie aie aie aie aie aiea aie
+        keys += str(num_otPK)+":"+str(my_id_pub)+":"+str(eph_pub)
         #Le HKDF sur la root_key est effectué dans le x3dh (je crois)
         x = hkdf(4096,session_key,APP_SALT)
-        session_key = x[:2048]
-        comm_key = x[2048:]
+        session_key = int.from_bytes(x[:2048],'little')
+        comm_key = int.from_bytes(x[2048:],'little')
 
     # END DOUBLE RATCHET
 
     if not init_message :
-        keys += "NONE:NONE:"
+
+        keys += "NONE:"+str(my_id_pub)+":"
         if not new_eph :#si on garde notre session on ne met que la session key à jour 
             x = hkdf(4096,session_key,APP_SALT)
-            session_key = x[:2048]
-            comm_key = x[2048:] #Enfin on a la clé de chiffrement du message 
-        if new_eph : #si une nouvelle session on fait le ratchet root key puis le ratchet comm key
+            session_key = int.from_bytes(x[:2048],'little')
+            comm_key = int.from_bytes(x[2048:],'little') #Enfin on a la clé de chiffrement du message 
+
+            #tricks pour rester dans la même session, on n'envoie pas de key sur le deuxième message
+            keys+="NONE"
+
+        if new_eph:
+            #création d'une clé ephemère 
+            (eph_priv,eph_pub) = key_creator(4,p,g) # Création d'un clé éphémère 
+            #calcul de la clé partagée correspondante
+            shared_key = diffie_hellman(eph_priv,id_pub) 
+
+            #on envoie la partie publique de notre clé ephemère
+            keys += str(eph_pub) 
+
             # Premier HKDF
-            x = hkdf(4096,root_key,session_key)
-            root_key = x[:2048]
-            session_key = x[2048:]
+            x = hkdf(4096,root_key,shared_key)#on fait le hkdf ave la shared_key 
+            root_key = int.from_bytes(x[:2048],'little')
+            session_key = int.from_bytes(x[2048:],'little')
 
             # Second HKDF
             x = hkdf(4096,session_key,APP_SALT)
-            session_key = x[:2048]
-            comm_key = x[2048:]
+            session_key = int.from_bytes(x[:2048],'little')
+            comm_key = int.from_bytes(x[2048:],'little')
 
     # MAJ des keys local pour cette conversation
 
@@ -206,13 +317,11 @@ def send_msg():#chiffrer / ratchet et tout et tout
             except :
                 pass
 
-    #tricks pour faire 2 messages d'affilé, on n'envoie pas de key sur le deuxième message
-    if not new_eph and not init_message:
-        eph_pub = "NONE" #on remplace la clé éphemère par un token NONE
+
     
     
 
-    keys += str(eph_pub) #on fini de preparer la variable keys qui contiend toute les clés à transférer
+    
 
 
     # chiffrement
@@ -316,12 +425,18 @@ if __name__=="__main__":
 
     # inititalisation des variables perso
     my_id_priv = 0
+    my_id_pub  = 0
+    my_pre_priv= 0
+    my_pre_pub = 0
     if not(new_user): #on doit récupérer l'id privé et peut être d'autre truc
         with open( personnal_keys, 'r') as f:
             for line  in f.readlines():
                 if line.split(',')[0] == myID and line.split(',')[1] == "ID":
                     my_id_priv = int(line.split(',')[3]) #FORMAT : name,type,number,private part,public part
-    
+                    my_id_pub = int(line.split(',')[4])
+                if line.split(',')[0] == myID and line.split(',')[1] == "PRE":
+                    my_pre_priv = int(line.split(',')[3]) #FORMAT : name,type,number,private part,public part
+                    my_pre_pub = int(line.split(',')[4])
     
 
 

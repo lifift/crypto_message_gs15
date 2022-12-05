@@ -8,7 +8,7 @@ g = 2
 def diffie_hellman(priv=int(), pub=int()):
     return (pow(pub,priv,p))  #La partie publique puissance partie privé modulo p notre contexte.
 
-def x3dh_send(personnal_keys:str,receiver:str,message:str,my_id_priv:int) : # partie initiale de l'échange x3dh (la partie de l'émetteur)
+def x3dh_send(receiver:str,my_id_priv:int) : # partie initiale de l'échange x3dh (la partie de l'émetteur)
     # return (root_key,id_pub,session_key,num_otPK,eph_pub) 
     server_key_path = "server.keys"
     server_msg_path = "server.msg"
@@ -33,7 +33,7 @@ def x3dh_send(personnal_keys:str,receiver:str,message:str,my_id_priv:int) : # pa
                 print(" pb x3dh sender")
                 pass
     # verify signature
-    verified = verify_sign(message, signature.split(":")[0], signature.split(":")[1], id_pub, p, g)
+    verified = verify_sign(preS_key, signature.split(":")[0], signature.split(":")[1], id_pub, p, g)
     if not verified :
         print("HACKER")
         return
@@ -67,6 +67,62 @@ def x3dh_send(personnal_keys:str,receiver:str,message:str,my_id_priv:int) : # pa
 
     #return
     return (root_key,id_pub,session_key,num_otPK,eph_pub)
+
+
+
+def x3dh_receive(personnal_keys:str,receiver:str,keys:str,my_id_priv:int,my_pre_priv:int) : # partie secondaire de l'échange x3dh (la partie de la reception)
+    # return (root_key,id_pub,session_key,num_otPK,eph_pub) 
+    server_key_path = "server.keys"
+    server_msg_path = "server.msg"
+    
+    num_otPK     = keys.split(":")[0]
+    sender_id_pub= int(keys.split(":")[1])
+    eph_pub      = int(keys.split(":")[2]) #public part of the used ephemeral key
+    otPK_priv    = 0
+    pre_priv     = my_pre_priv
+     
+
+
+
+    # Récupération/suppression? du bundle de clé en local
+    with open(personnal_keys,'r') as f :#FORMAT:name,type,number,private part,public part
+        for line in f.readlines():
+            try:
+                if (line.strip("\n").split(',')[0] == receiver) and (line.split(',')[1] == "otPK") and (line.split(',')[2] == num_otPK): # on cherche la ligne correspond à notre otPK
+                    otPK_priv = line.strip("\n").split(',')[3]
+            except :
+                pass
+
+    if not otPK_priv :
+        input("Problème x3dh receive : on n'a pas retrouvé l'otPK")
+
+
+    #calcul DH 1-4
+    """
+    1. DH1 = DH(IDprivB ; SigP KpubA ) 
+    2. DH2 = DH(EphprivB ; IDpubA ) 
+    3. DH3 = DH(EphprivB ; SigP KpubA ) 
+    4. DH4 = DH(EphprivB ; OtP KnpubA ) 
+    """
+    DH1 = dh( int(my_pre_priv) , sender_id_pub )
+    DH2 = dh( int(my_id_priv ) , eph_pub )
+    DH3 = dh( int(my_pre_priv) , eph_pub )
+    DH4 = dh( int(otPK_priv  ) , eph_pub )
+    conc_DH = int(str(DH1) +str(DH2) +str(DH3) +str(DH4)) 
+
+    #ratchet initial ?
+    length = 4096
+    derived_keys = hkdf( 
+        length=length, # on prend une longueur de 4096 pour se fournir 2 clés de 2048 bits
+        key= conc_DH,
+        salt=2**511,
+        ) 
+    root_key    = int.from_bytes(derived_keys[:int(len(derived_keys))/2],"little")
+    session_key = int.from_bytes(derived_keys[int(len(derived_keys))/2:],"little")
+
+
+    #return
+    return (root_key,session_key)
 
 
     

@@ -14,7 +14,7 @@ def hmac_sha512(key, data): #  Besoin d'une fonction de hashage + le HMAC qui pr
     return output
 
 
-def hkdf(length= int(),key= int(), salt= int()) -> int:
+def hkdf(length= int(),key= int(), salt= int()) -> bytes:
     """Key derivation function"""
     if salt == 0:
         salt = bytes([0] * hash_len)
