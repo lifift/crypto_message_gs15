@@ -54,6 +54,8 @@ def x3dh_send(receiver:str,my_id_priv:int) : # partie initiale de l'échange x3d
     DH4 = dh( eph_priv,  int(otPk)     )
     conc_DH = int(str(DH1) +str(DH2) +str(DH3) +str(DH4)) 
 
+    print (str(DH1))
+
     #ratchet initial ?
     length = 4096
     derived_keys = hkdf( 
@@ -109,6 +111,7 @@ def x3dh_receive(personnal_keys:str,receiver:str,keys:str,my_id_priv:int,my_pre_
     DH3 = dh( int(my_pre_priv) , eph_pub )
     DH4 = dh( int(otPK_priv  ) , eph_pub )
     conc_DH = int(str(DH1) +str(DH2) +str(DH3) +str(DH4)) 
+
 
     #ratchet initial ?
     length = 4096

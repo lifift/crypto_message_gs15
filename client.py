@@ -6,6 +6,7 @@ from dh import dh as diffie_hellman
 from dh import x3dh_send
 from dh import x3dh_receive
 from hkdf import hkdf
+from rc4 import rc4
 from dsa_utils import generate_sign
 from dsa_utils import verify_sign
 
@@ -13,8 +14,10 @@ p = 2560989860441481835634267500898049489732097370003272904274197884795547069056
 q = 10898621702918512854645648131019767490988342061643920779545576456895643674524554995206186169110085936609320715829241238089007233226152798270438965200688221
 g = 2
 
+DEBUG = True
 APP_SALT = 2**511
 # selecting a user
+
 
 
 def check_msg():# met à jour les messages de "ID" en interrogeant le serveur
@@ -109,14 +112,16 @@ def read_msg(message=str()):
 
         # HKDF session => (session+comm_key) 
         x = hkdf(4096,session_key,APP_SALT)
-        (session_key,comm_key) = (int.from_bytes(x[:2048],'little'),int.from_bytes(x[2048:],'little')) 
+        (session_key,comm_key) = (int.from_bytes(x[:256],'little'),int.from_bytes(x[256:],'little')) 
 
         #vérifier une signature ?
         verified = verify_sign(data, signature.split(":")[0], signature.split(":")[1], sender_id_pub, p, g, q)
         if not verified :
             print("HACKER")
             pass
-
+        
+        if DEBUG : print("root : ",str(root_key),"\nsession : ",str(session_key),"\ncomm : ",str(comm_key))
+        
         #Stocker les clé pour le futur
         payload = "\n"+sender+","+str(root_key)+","+sender_id_pub+","+str(session_key)# FORMAT : name,root_key, his public id, the session last key
         with open(personnal_keys,'a') as f : 
@@ -124,9 +129,13 @@ def read_msg(message=str()):
             print("key stocked")
 
         # déchiffrer le message.
+        data_bytes = bytes.fromhex(data)
+        if DEBUG : print(str(data_bytes))
+        decoded_message = rc4( int.to_bytes(comm_key,256,'little')  , data_bytes).decode("utf-8")
+
         # stocker le message en local
         with open(personnal_msg,'a') as f:
-            output = "\n"+sender+","+receiver+","+ msg_id+","+"True"+","+date+","+data #sender, receiver, id, ack, date, msg 
+            output = "\n"+sender+","+receiver+","+ msg_id+","+"True"+","+date+","+decoded_message #sender, receiver, id, ack, date, msg 
             f.write(output)
             
     
@@ -178,20 +187,21 @@ def read_msg(message=str()):
 
             # Premier HKDF
             x = hkdf(4096,root_key,shared_key)#on fait le hkdf ave la shared_key 
-            root_key = int.from_bytes(x[:2048],'little')
-            session_key = int.from_bytes(x[2048:],'little')
+            root_key = int.from_bytes(x[:256],'little')
+            session_key = int.from_bytes(x[256:],'little')
 
             # Second HKDF
             x = hkdf(4096,session_key,APP_SALT)
-            session_key = int.from_bytes(x[:2048],'little')
-            comm_key = int.from_bytes(x[2048:],'little')
+            session_key = int.from_bytes(x[:256],'little')
+            comm_key = int.from_bytes(x[256:],'little')
         
         if not new_session : #on ne fait que le second hkdf si on ne change pas de session
             # Second HKDF
             x = hkdf(4096,session_key,APP_SALT)
-            session_key = int.from_bytes(x[:2048],'little')
-            comm_key = int.from_bytes(x[2048:],'little')
+            session_key = int.from_bytes(x[:256],'little')
+            comm_key = int.from_bytes(x[256:],'little')
 
+        #if DEBUG : print("root : ",str(root_key),"\nsession : ",str(session_key),"\ncomm : ",str(comm_key))
 
         #Stocker les clé pour le futur
         payload = sender+","+str(root_key)+","+str(sender_id_pub)+","+str(session_key)+"\n"# FORMAT : name,root_key, his public id, the session last key
@@ -207,9 +217,12 @@ def read_msg(message=str()):
                 except:pass
 
         # déchiffrer le message.
+        data_bytes = bytes.fromhex(data)
+        decoded_message = rc4( int.to_bytes(comm_key,256,'little')  , data_bytes).decode("utf-8")
+
         # stocker le message en local
         with open(personnal_msg,'a') as f:
-            output = "\n"+sender+","+receiver+","+ msg_id+","+"True"+","+date+","+data #sender, receiver, id, ack, date, msg 
+            output = "\n"+sender+","+receiver+","+ msg_id+","+"True"+","+date+","+decoded_message #sender, receiver, id, ack, date, msg 
             f.write(output)
 
 
@@ -274,8 +287,8 @@ def send_msg():#chiffrer / ratchet et tout et tout
         keys += str(num_otPK)+":"+str(my_id_pub)+":"+str(eph_pub)
         #Le HKDF sur la root_key est effectué dans le x3dh (je crois)
         x = hkdf(4096,session_key,APP_SALT)
-        session_key = int.from_bytes(x[:2048],'little')
-        comm_key = int.from_bytes(x[2048:],'little')
+        session_key = int.from_bytes(x[:256],'little')
+        comm_key = int.from_bytes(x[256:],'little')
 
     # END DOUBLE RATCHET
 
@@ -284,8 +297,8 @@ def send_msg():#chiffrer / ratchet et tout et tout
         keys += "NONE:"+str(my_id_pub)+":"
         if not new_eph :#si on garde notre session on ne met que la session key à jour 
             x = hkdf(4096,session_key,APP_SALT)
-            session_key = int.from_bytes(x[:2048],'little')
-            comm_key = int.from_bytes(x[2048:],'little') #Enfin on a la clé de chiffrement du message 
+            session_key = int.from_bytes(x[:256],'little')
+            comm_key = int.from_bytes(x[256:],'little') #Enfin on a la clé de chiffrement du message 
 
             #tricks pour rester dans la même session, on n'envoie pas de key sur le deuxième message
             keys+="NONE"
@@ -301,14 +314,18 @@ def send_msg():#chiffrer / ratchet et tout et tout
 
             # Premier HKDF
             x = hkdf(4096,root_key,shared_key)#on fait le hkdf ave la shared_key 
-            root_key = int.from_bytes(x[:2048],'little')
-            session_key = int.from_bytes(x[2048:],'little')
+            root_key = int.from_bytes(x[:256],'little')
+            session_key = int.from_bytes(x[256:],'little')
 
             # Second HKDF
             x = hkdf(4096,session_key,APP_SALT)
-            session_key = int.from_bytes(x[:2048],'little')
-            comm_key = int.from_bytes(x[2048:],'little')
+            session_key = int.from_bytes(x[:256],'little')
+            comm_key = int.from_bytes(x[256:],'little')
 
+
+    #if DEBUG : print("root : ",str(root_key),"\nsession : ",str(session_key),"\ncomm : ",str(comm_key))
+    
+    
     # MAJ des keys local pour cette conversation
     """
     ATTENTION
@@ -341,11 +358,15 @@ def send_msg():#chiffrer / ratchet et tout et tout
 
 
     # chiffrement
+    data_bytes = data.encode("utf-8")
+    encoded_message = rc4( int.to_bytes(comm_key,256,'little')  , data_bytes)
 
+    if DEBUG: print(str(encoded_message))
 
+    hexa_encoded_message = encoded_message.hex()
 
     # Signature 
-    (x,y)=generate_sign(data,p,q,g,my_id_priv)
+    (x,y)=generate_sign(hexa_encoded_message,p,q,g,my_id_priv)
     signature=str(x)+":"+str(y) # on concatène les deux parties de la signature 
 
     # ID
@@ -360,7 +381,7 @@ def send_msg():#chiffrer / ratchet et tout et tout
     # stocker le message sur le serveur
     with open(server_msg_path,'a') as f :
 
-        output = "\n"+myID+","+receiver+","+msg_id+","+date+","+data+","+msg_type+","+keys+","+signature #origin,dest,id,date,data=ACK,type=ACK,keys,signature
+        output = "\n"+myID+","+receiver+","+msg_id+","+date+","+hexa_encoded_message+","+msg_type+","+keys+","+signature #origin,dest,id,date,data=ACK,type=ACK,keys,signature
         f.write(output)
      # stocker le message en local ATTENTION A mettre le message en clair en local
     with open(personnal_msg,'a') as f:
@@ -440,20 +461,22 @@ if __name__=="__main__":
 
 
     # inititalisation des variables perso
-    my_id_priv = 0
-    my_id_pub  = 0
-    my_pre_priv= 0
-    my_pre_pub = 0
+
     if not(new_user): #on doit récupérer l'id privé et peut être d'autre truc
+        my_id_priv = 0
+        my_id_pub  = 0
+        my_pre_priv= 0
+        my_pre_pub = 0
         with open( personnal_keys, 'r') as f:
             for line  in f.readlines():
                 if line.split(',')[0] == myID and line.split(',')[1] == "ID":
                     my_id_priv = int(line.split(',')[3]) #FORMAT : name,type,number,private part,public part
                     my_id_pub = int(line.split(',')[4])
+                    if DEBUG : print("FOUND")
                 if line.split(',')[0] == myID and line.split(',')[1] == "PRE":
                     my_pre_priv = int(line.split(',')[3]) #FORMAT : name,type,number,private part,public part
                     my_pre_pub = int(line.split(',')[4])
-    
+                    if DEBUG : print("FOUND")
 
 
     RUNNING = True

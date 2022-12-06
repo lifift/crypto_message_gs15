@@ -1,4 +1,5 @@
 def rc4(key:bytes, message:bytes):
+    #print("key : ",str(key))
     output=b''
     S=list(range(256))
     T=[]
@@ -25,10 +26,10 @@ def rc4(key:bytes, message:bytes):
 
 if __name__== "__main__" :
     key=b'hello'
-    message=b'                                                  '*10000
+    message=b'  yooooooooooooooooooooooooooo         '
     count = [0]*256
     result= rc4(key,message)
-    #print (result)
+    print (result)
     for byte in result :
         count[int(byte)]+=1
     mean = 0
@@ -41,4 +42,4 @@ if __name__== "__main__" :
     ecartType=(ecartType/256)**0.5
     print(ecartType)
     print(count)
-    #print(rc4(key,result))
+    print(rc4(key,result))
