@@ -2,7 +2,7 @@
 import time
 import random
 from key_creator import key_creator
-from dh import diffie_hellman
+from dh import dh as diffie_hellman
 from dh import x3dh_send
 from dh import x3dh_receive
 from hkdf import hkdf
@@ -16,9 +16,6 @@ g = 2
 APP_SALT = 2**511
 # selecting a user
 
-
-def x3dh(target:str): #fait l'échange diffie hellman et retourne les paramètre à enregistrer
-    return(0,0,0,0,0) # root_key,id_pub,session_key
 
 def check_msg():# met à jour les messages de "ID" en interrogeant le serveur
     with open(server_msg_path,'r') as f : 
@@ -37,7 +34,12 @@ def check_msg():# met à jour les messages de "ID" en interrogeant le serveur
     for x in new_msg :
         read_msg(x) # READ_MSG une fonction à créer qui traite les messages en fonction de leur type : message, init , ack, fichier
         
+
+
+
+
 def check_conv(friend=str(),mode=int()):
+    print("\n\n")
     with open(personnal_msg,'r') as f : 
         lines = f.readlines() #format d'une ligne locale : sender, receiver, id, ack, date, msg  
     inbox  = []
@@ -64,6 +66,10 @@ def check_conv(friend=str(),mode=int()):
                     return (output)
         except :
             pass
+    print("\n\n")
+
+
+
 
 def read_msg(message=str()):
     #FORMAT : origin,dest,id,date,data,type,keys,signature
@@ -90,8 +96,12 @@ def read_msg(message=str()):
                     pass
 
     if msg_type == "INIT": #besoin d'un init ? 
-        #FORMAT : origin,dest,id,date,data,type,keys,signature
 
+        with open(server_msg_path,'a') as f : # ouverture en mode "append" pour stocker notre  ACK sur le serveur
+            output = "\n"+myID+","+sender+","+ msg_id+","+"date.date"+",ACK,ACK,NONE:NONE:NONE,NONE:NONE" #origin,dest,id,date,data=ACK,type=ACK
+            f.write(output)
+        
+        #FORMAT : origin,dest,id,date,data,type,keys,signature
         sender_id_pub = keys.split(":")[1]
 
         #faire le x3dh
@@ -102,29 +112,29 @@ def read_msg(message=str()):
         (session_key,comm_key) = (int.from_bytes(x[:2048],'little'),int.from_bytes(x[2048:],'little')) 
 
         #vérifier une signature ?
-        verified = verify_sign(data, signature.split(":")[0], signature.split(":")[1], sender_id_pub, p, g)
+        verified = verify_sign(data, signature.split(":")[0], signature.split(":")[1], sender_id_pub, p, g, q)
         if not verified :
             print("HACKER")
-            return
-
+            pass
 
         #Stocker les clé pour le futur
-        payload = sender+","+str(root_key)+","+sender_id_pub+","+str(session_key)+"\n"# FORMAT : name,root_key, his public id, the session last key
+        payload = "\n"+sender+","+str(root_key)+","+sender_id_pub+","+str(session_key)# FORMAT : name,root_key, his public id, the session last key
         with open(personnal_keys,'a') as f : 
             f.write(payload)
+            print("key stocked")
 
         # déchiffrer le message.
         # stocker le message en local
         with open(personnal_msg,'a') as f:
             output = "\n"+sender+","+receiver+","+ msg_id+","+"True"+","+date+","+data #sender, receiver, id, ack, date, msg 
             f.write(output)
+            
     
     if msg_type == "FILE":
         
-
         # envoyer un ACK pour ce message
         with open(server_msg_path,'a') as f : # ouverture en mode "append" pour stocker notre  ACK sur le serveur
-            output = "\n"+myID+","+sender+","+ msg_id+","+date.date+",ACK,ACK" 
+            output = "\n"+myID+","+sender+","+ msg_id+","+date.date+",ACK,ACK,NONE:NONE:NONE,NONE:NONE" 
             f.write(output)
 
         #FORMAT : origin,dest,id,date,data,type,keys,signature
@@ -141,15 +151,15 @@ def read_msg(message=str()):
 
         # envoyer un ACK pour ce message
         with open(server_msg_path,'a') as f : # ouverture en mode "append" pour stocker notre  ACK sur le serveur
-            output = "\n"+myID+","+sender+","+ msg_id+","+"date.date"+",ACK,ACK" #origin,dest,id,date,data=ACK,type=ACK
+            output = "\n"+myID+","+sender+","+ msg_id+","+"date.date"+",ACK,ACK,NONE:NONE:NONE,NONE:NONE" #origin,dest,id,date,data=ACK,type=ACK
             f.write(output)
         
-
         #FORMAT : origin,dest,id,date,data,type,keys,signature
         # aller chercher la clé du ratchet de cette conv,
         with open (personnal_keys,'r') as f : # ici on essaie de chopper les valeurs du ratchet précédent si elles existent 
             for line in f.readlines():
-                if line.split(",")[0] == receiver : # FORMAT : name,root_key, his public id, the session last key
+                if line.split(",")[0] == sender : # FORMAT : name,root_key, his public id, the session last key
+
                     root_key      = int(line.split(",")[1]) # aller retrouver la root_key actuelle
                     sender_id_pub = int(line.split(",")[2]) # retrouver l'ID publique de l'autre 
                     session_key   = int(line.split(",")[3]) # retrouver le dernier secret partagé utilisé 
@@ -183,9 +193,8 @@ def read_msg(message=str()):
             comm_key = int.from_bytes(x[2048:],'little')
 
 
-
         #Stocker les clé pour le futur
-        payload = sender+","+str(root_key)+","+sender_id_pub+","+str(session_key)+"\n"# FORMAT : name,root_key, his public id, the session last key
+        payload = sender+","+str(root_key)+","+str(sender_id_pub)+","+str(session_key)+"\n"# FORMAT : name,root_key, his public id, the session last key
         with open(personnal_keys,'r') as f : 
             lines = f.readlines()
         with open(personnal_keys,'w') as f : 
@@ -219,20 +228,6 @@ def read_msg(message=str()):
 def send_msg():#chiffrer / ratchet et tout et tout 
     receiver =  input("Pour qui est votre message ? : ")
 
-    #TEST existance ? => clés sur le serveurs ?
-    exist = False
-    with open(server_key_path,'r') as f :
-        for line in f.readlines() :
-            if line.split(",")[0] == receiver :
-                exist = True
-    if not exist:
-        print (receiver+" n'existe pas.\n\n")
-        time.sleep(2)
-        return #on quitte la fonction et on retourne au menu principal
-
-
-    data = input("Entrez votre message : ")
-    keys = ""
 
     # PREMIER MESSAGE ? && Tester si le dernier message a été acquitté
     init_message = False
@@ -240,11 +235,28 @@ def send_msg():#chiffrer / ratchet et tout et tout
     conv = check_conv(receiver,1)#on stocke les valeurs d'acquittement actuelle. Des x ou des o
     if conv is None : #si la conversation est vide, on doit faire x3dh echange de clés et tofu
         init_message = True
-    
-
     elif "o" in conv :
         new_eph = False # Il y a un message non acquitté, donc on reste sur la même session (peut-être)
     
+    if init_message :    
+        #TEST existance ? => clés sur le serveurs ?
+        exist = False
+        with open(server_key_path,'r') as f :
+            for line in f.readlines() :
+                if line.split(",")[0] == receiver :
+                    exist = True
+        if not exist:
+            print (receiver+" n'existe pas.\n\n")
+            time.sleep(2)
+            return #on quitte la fonction et on retourne au menu principal
+    else :
+       exist = True 
+
+
+    data = input("Entrez votre message : ")
+    keys = ""
+
+
     # START DOUBLE RATCHET
     with open (personnal_keys,'r') as f : # ici on essaie de chopper les valeurs du ratchet précédent si elles existent 
         for line in f.readlines():
@@ -258,7 +270,7 @@ def send_msg():#chiffrer / ratchet et tout et tout
     
     if init_message :
         # X3DH si premier message ............
-        (root_key,id_pub,session_key,num_otPK,eph_pub) = x3dh_send(receiver,my_id_priv) #TODO  aie aie aie aie aie aiea aie
+        (root_key,id_pub,session_key,num_otPK,eph_pub) = x3dh_send(receiver,my_id_priv) 
         keys += str(num_otPK)+":"+str(my_id_pub)+":"+str(eph_pub)
         #Le HKDF sur la root_key est effectué dans le x3dh (je crois)
         x = hkdf(4096,session_key,APP_SALT)
@@ -298,7 +310,6 @@ def send_msg():#chiffrer / ratchet et tout et tout
             comm_key = int.from_bytes(x[2048:],'little')
 
     # MAJ des keys local pour cette conversation
-
     """
     ATTENTION
     Il faudrait normalement conserver les clés précédantes pendant un petit moment. 
@@ -316,6 +327,11 @@ def send_msg():#chiffrer / ratchet et tout et tout
                     f.write(line)
             except :
                 pass
+    #On doit créer une ligne si c'est l'init message
+    if init_message:
+        payload = "\n"+receiver+","+str(root_key)+","+str(id_pub)+","+str(session_key)
+        with open(personnal_keys, "a") as f:
+            f.write(payload)
 
 
     

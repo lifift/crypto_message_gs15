@@ -5,7 +5,7 @@ from hkdf import hkdf
 p = 25609898604414818356342675008980494897320973700032729042741978847955470690563539315503075260137954424218767802738997491883941727288933895582915811782129793113275820909132179284450321438003081904632732477602364083710534888696619971023354520651427561951597944508962735793879190401444321968298703993398341618781322304367199429931812771382884008170204285496824709993303257154803236932656743437511594862201976855434608648427127824768146417075316608933153693677113483567374237103917039356104683891533551327116768970260095980834507885270535254322555436964641024641901789777790118207151853051452357282161018449250985923122741
 q = 10898621702918512854645648131019767490988342061643920779545576456895643674524554995206186169110085936609320715829241238089007233226152798270438965200688221
 g = 2
-def diffie_hellman(priv=int(), pub=int()):
+def dh(priv=int(), pub=int()):
     return (pow(pub,priv,p))  #La partie publique puissance partie privé modulo p notre contexte.
 
 def x3dh_send(receiver:str,my_id_priv:int) : # partie initiale de l'échange x3dh (la partie de l'émetteur)
@@ -33,10 +33,10 @@ def x3dh_send(receiver:str,my_id_priv:int) : # partie initiale de l'échange x3d
                 print(" pb x3dh sender")
                 pass
     # verify signature
-    verified = verify_sign(preS_key, signature.split(":")[0], signature.split(":")[1], id_pub, p, g)
+    verified = verify_sign(preS_key, signature.split(":")[0], signature.split(":")[1], id_pub, p, g,q)
     if not verified :
         print("HACKER")
-        return
+        pass
     #generate ephemeral key
 
     (eph_priv,eph_pub) = key_creator(4, p, g)
@@ -61,8 +61,8 @@ def x3dh_send(receiver:str,my_id_priv:int) : # partie initiale de l'échange x3d
         key= conc_DH,
         salt=2**511,
         ) 
-    root_key    = int.from_bytes(derived_keys[:int(len(derived_keys))/2],"little")
-    session_key = int.from_bytes(derived_keys[int(len(derived_keys))/2:],"little")
+    root_key    = int.from_bytes(derived_keys[:int(len(derived_keys))//2],"little")
+    session_key = int.from_bytes(derived_keys[int(len(derived_keys))//2:],"little")
 
 
     #return
@@ -117,8 +117,8 @@ def x3dh_receive(personnal_keys:str,receiver:str,keys:str,my_id_priv:int,my_pre_
         key= conc_DH,
         salt=2**511,
         ) 
-    root_key    = int.from_bytes(derived_keys[:int(len(derived_keys))/2],"little")
-    session_key = int.from_bytes(derived_keys[int(len(derived_keys))/2:],"little")
+    root_key    = int.from_bytes(derived_keys[:int(len(derived_keys))//2],"little")
+    session_key = int.from_bytes(derived_keys[int(len(derived_keys))//2:],"little")
 
 
     #return

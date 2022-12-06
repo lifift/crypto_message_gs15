@@ -37,11 +37,14 @@ def generate_sign(message, p, q, g, private_key):
         w = pow(sign2, -1, q)
     return (sign1, sign2)
 
-def verify_sign(message, sign1, sign2, pub_key, p , g):
+def verify_sign(message, sign1, sign2, pub_key, p , g, q):
 
     #TEMP
     message=1
 
+    sign1=int(sign1)
+    sign2=int(sign2)
+    pub_key=int(pub_key)
     w = pow(sign2, -1, q)
     u1 = (message * w) % q
     u2 = (sign1 * w) % q
