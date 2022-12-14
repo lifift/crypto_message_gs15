@@ -9,10 +9,12 @@ from hkdf import hkdf
 from rc4 import rc4
 from dsa_utils import generate_sign
 from dsa_utils import verify_sign
+from datetime import datetime
+
 
 p = 25609898604414818356342675008980494897320973700032729042741978847955470690563539315503075260137954424218767802738997491883941727288933895582915811782129793113275820909132179284450321438003081904632732477602364083710534888696619971023354520651427561951597944508962735793879190401444321968298703993398341618781322304367199429931812771382884008170204285496824709993303257154803236932656743437511594862201976855434608648427127824768146417075316608933153693677113483567374237103917039356104683891533551327116768970260095980834507885270535254322555436964641024641901789777790118207151853051452357282161018449250985923122741
 q = 10898621702918512854645648131019767490988342061643920779545576456895643674524554995206186169110085936609320715829241238089007233226152798270438965200688221
-g = 2
+g = 14748285547860891233975997283077896907274400627046553753871151539760884885790168770829593892286143788048038301808860984103407433451119851391335466994980962394563526010784734563078391127116421220207367149688383988307093109855172777250534791066626891030710091026645430537791647762417763540763689690526440459128783520536341692638386402962887016857565951133331589372599887152470297628892163589782630338295530373831428798459219417766656522045003583428041898104475209147065612429325294837587314646241597378875734664388392084098537237428914831710058388398951969618394996838649802283815434179994810830210881507594620419122191
 
 DEBUG = False
 APP_SALT = 2**511
@@ -54,7 +56,7 @@ def check_conv(friend=str(),mode=int()):
             ack      = line.split(',')[3]
             date     = line.split(',')[4]
             msg      = line.split(',')[5] # On stocke le message en clair mais on ne stocke pas la clé
-        
+            nice_date= datetime.fromtimestamp(int(date)).strftime("%d %B %Y %I:%M:%S")
             if (sender==friend) or (receiver==friend) :
                 output= ""
                 if ack == "True":
@@ -63,7 +65,7 @@ def check_conv(friend=str(),mode=int()):
                     output += 'o '
                 
                 if mode == 0:#mode print
-                    output += date + "\n" + sender + ' => ' + receiver + " # " + msg # x 24 novembre 2020 \n Bob => Alice # Il fait très beau demain :) 
+                    output += nice_date + "\n" + sender + ' => ' + receiver + " # " + msg # x 24 novembre 2020 \n Bob => Alice # Il fait très beau demain :) 
                     print (output)
                 else :
                     return (output)
@@ -118,7 +120,7 @@ def read_msg(message=str()):
         verified = verify_sign(data, signature.split(":")[0], signature.split(":")[1], sender_id_pub, p, g, q)
         if not verified :
             print("HACKER")
-            pass
+            return
         
         if DEBUG : print("root : ",str(root_key),"\nsession : ",str(session_key),"\ncomm : ",str(comm_key))
         
@@ -323,7 +325,7 @@ def send_msg():#chiffrer / ratchet et tout et tout
             comm_key = int.from_bytes(x[256:],'little')
 
 
-    #if DEBUG : print("root : ",str(root_key),"\nsession : ",str(session_key),"\ncomm : ",str(comm_key))
+    if DEBUG : print("root : ",str(root_key),"\nsession : ",str(session_key),"\ncomm : ",str(comm_key))
     
     
     # MAJ des keys local pour cette conversation

@@ -4,6 +4,7 @@ Based on : https://fr.wikipedia.org/wiki/Digital_Signature_Algorithm
 """
 try :
     import random
+    from eponge import hash512
     from modular_power import modular_power
     from prime_generator import generate_prime
 except :
@@ -27,26 +28,28 @@ def generate_params(p,q):
 def generate_sign(message, p, q, g, private_key):
     sign1 = 0
 
-    #TEMP
-    message=1
+    temp= str(message)
+    temp= bytes(temp,'utf-8')
+    Hmessage =hash512(temp)
 
     while sign1==0 or sign2==0 : 
         k = random.randrange( 1, q-1 )
         sign1 = pow(g, k, p) % q # The first part of the DSA signature
-        sign2 = ( pow(k, -1, q) * (message+private_key*sign1) ) % q # The second part of the DSA signature
+        sign2 = ( pow(k, -1, q) * (Hmessage+private_key*sign1) ) % q # The second part of the DSA signature
         w = pow(sign2, -1, q)
     return (sign1, sign2)
 
 def verify_sign(message, sign1, sign2, pub_key, p , g, q):
 
-    #TEMP
-    message=1
+    temp= str(message)
+    temp= bytes(temp,'utf-8')
+    Hmessage =hash512(temp)
 
     sign1=int(sign1)
     sign2=int(sign2)
     pub_key=int(pub_key)
     w = pow(sign2, -1, q)
-    u1 = (message * w) % q
+    u1 = (Hmessage * w) % q
     u2 = (sign1 * w) % q
     
     v =  (pow(g,u1,p) * pow(pub_key,u2,p)%p) % q 
@@ -60,8 +63,8 @@ if __name__=="__main__":
     #p=451425837041 
     #q=797 
     ( p, q, g, y, x ) =  generate_params(p,q)
-    print("x: ",x,"\ny: ",y)
+    print("g:",str(g))
     ( sign1,sign2 )   =  generate_sign(2**256,p,q,g,x)
     #print(sign1,sign2)
-    print(verify_sign(2**256, sign1, sign2, y, p , g ))
+    print(verify_sign(2**256, sign1, sign2, y, p , g,q ))
     
