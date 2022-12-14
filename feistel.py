@@ -104,10 +104,16 @@ def feistel(bloc, key):
     return bloc%(2**(BLOC_SIZE//2))
 
 
-if __name__=='__main__':  
-    message = b'  aaaaaaaaaaaavghrtrtrtrtrtrtrtrt                    htrhtrhtr                '*35
+if __name__=='__main__': 
+    with open('files/Capture.PNG','rb') as f :
+
+        message = f.read()
     KEY = randint(2**(BLOC_SIZE//2-1),2**(BLOC_SIZE//2))
     cipher = encodeMessage(message,KEY)
+    with open('files/coded_img.png','ab') as f :
+        f.write(cipher)
     print("cipher message:",cipher)
     print("")
-    print(decodeMessage(cipher, KEY))
+    #print(decodeMessage(cipher, KEY))
+    with open('files/decoded_img.png','ab') as f :
+        f.write(decodeMessage(cipher, KEY))
