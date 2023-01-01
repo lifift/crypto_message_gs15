@@ -7,6 +7,7 @@ from dh import x3dh_send
 from dh import x3dh_receive
 from hkdf import hkdf
 from rc4 import rc4
+from feistel import encodeMessage, decodeMessage
 from dsa_utils import generate_sign
 from dsa_utils import verify_sign
 from datetime import datetime
@@ -35,7 +36,7 @@ def check_msg():# met à jour les messages de "ID" en interrogeant le serveur
                     new_msg.append(line.strip("\n"))
             except : 
                 pass
-    print(str(len(new_msg))," nouveaux messages !")
+    print(str(len(new_msg))," nouveau(x) messages !")
     for x in new_msg :
         read_msg(x) # READ_MSG une fonction à créer qui traite les messages en fonction de leur type : message, init , ack, fichier
         
@@ -133,6 +134,7 @@ def read_msg(message=str()):
         # déchiffrer le message.
         data_bytes = bytes.fromhex(data)
         if DEBUG : print(str(data_bytes))
+
         decoded_message = rc4( int.to_bytes(comm_key,256,'little')  , data_bytes).decode("utf-8")
 
         # stocker le message en local
@@ -145,16 +147,76 @@ def read_msg(message=str()):
         
         # envoyer un ACK pour ce message
         with open(server_msg_path,'a') as f : # ouverture en mode "append" pour stocker notre  ACK sur le serveur
-            output = "\n"+myID+","+sender+","+ msg_id+","+date.date+",ACK,ACK,NONE:NONE:NONE,NONE:NONE" 
+            output = "\n"+myID+","+sender+","+ msg_id+","+"date.date"+",ACK,ACK,NONE:NONE:NONE,NONE:NONE" 
             f.write(output)
 
-        #FORMAT : origin,dest,id,date,data,type,keys,signature
 
+        #FORMAT : origin,dest,id,date,data,type,keys,signature
         # aller chercher la clé du ratchet de cette conv,
-        #  faire un tours de moulinnette pour avoir la clé de déchiffrement, et du prochain ratchet 
-        # stocker la nouvelle clé de ratchet
-        # déchiffrer le fichier.
-        # stocker le fichier dans le dossier files avec un nom parlant => id.sender.receiver 
+        with open (personnal_keys,'r') as f : # ici on essaie de chopper les valeurs du ratchet précédent si elles existent 
+            for line in f.readlines():
+                if line.split(",")[0] == sender : # FORMAT : name,root_key, his public id, the session last key
+
+                    root_key      = int(line.split(",")[1]) # aller retrouver la root_key actuelle
+                    sender_id_pub = int(line.split(",")[2]) # retrouver l'ID publique de l'autre 
+                    session_key   = int(line.split(",")[3]) # retrouver le dernier secret partagé utilisé 
+       
+        num_otPK     = keys.split(":")[0]
+        sender_id_pub= int(keys.split(":")[1])
+        eph_pub      = keys.split(":")[2]
+        # Check if it is a new session
+        new_session = True
+        if eph_pub=="NONE":
+            new_session = False
+
+        if new_session :
+            #  faire un tours de moulinnette pour avoir la clé de déchiffrement, et du prochain ratchet 
+            shared_key = diffie_hellman(my_id_priv,int(eph_pub)) 
+
+            # Premier HKDF
+            x = hkdf(4096,root_key,shared_key)#on fait le hkdf ave la shared_key 
+            root_key = int.from_bytes(x[:256],'little')
+            session_key = int.from_bytes(x[256:],'little')
+
+            # Second HKDF
+            x = hkdf(4096,session_key,APP_SALT)
+            session_key = int.from_bytes(x[:256],'little')
+            comm_key = int.from_bytes(x[256:],'little')
+        
+        if not new_session : #on ne fait que le second hkdf si on ne change pas de session
+            # Second HKDF
+            x = hkdf(4096,session_key,APP_SALT)
+            session_key = int.from_bytes(x[:256],'little')
+            comm_key = int.from_bytes(x[256:],'little')
+
+        #if DEBUG : print("root : ",str(root_key),"\nsession : ",str(session_key),"\ncomm : ",str(comm_key))
+
+        #Stocker les clé pour le futur
+        payload = sender+","+str(root_key)+","+str(sender_id_pub)+","+str(session_key)+"\n"# FORMAT : name,root_key, his public id, the session last key
+        with open(personnal_keys,'r') as f : 
+            lines = f.readlines()
+        with open(personnal_keys,'w') as f : 
+            for line in lines :
+                try:
+                    if line.split(",")[0] == sender :
+                        f.write(payload)
+                    else :
+                        f.write(line)
+                except:pass
+
+        # déchiffrer le message.
+        data_bytes = bytes.fromhex(data)
+
+        decode_message = decodeMessage(data_bytes,comm_key)
+
+        decode_message = decode_message.split(b':')
+
+        # stocker le fichier en local
+        file_location = 'files/' + decode_message[1].decode('utf-8')
+        with open(file_location,'ab') as f :
+            f.write(decode_message[0])
+        
+    
 
 
 
@@ -220,6 +282,7 @@ def read_msg(message=str()):
 
         # déchiffrer le message.
         data_bytes = bytes.fromhex(data)
+        
         decoded_message = rc4( int.to_bytes(comm_key,256,'little')  , data_bytes).decode("utf-8")
 
         # stocker le message en local
@@ -361,6 +424,7 @@ def send_msg():#chiffrer / ratchet et tout et tout
 
     # chiffrement
     data_bytes = data.encode("utf-8")
+    
     encoded_message = rc4( int.to_bytes(comm_key,256,'little')  , data_bytes)
 
     if DEBUG: print(str(encoded_message))
@@ -395,7 +459,166 @@ def send_msg():#chiffrer / ratchet et tout et tout
 
 
 
+def send_file():#chiffrer / ratchet et tout et tout 
+    receiver =  input("A qui souhaitez-vous envoyer le fichier ? : ")
 
+
+    # PREMIER MESSAGE ? && Tester si le dernier message a été acquitté
+    init_message = False
+    new_eph = True #A-t-on besoin d'une nouvelle clé ephemere ?
+    conv = check_conv(receiver,1)#on stocke les valeurs d'acquittement actuelle. Des x ou des o
+    if conv is None : #si la conversation est vide, on doit faire x3dh echange de clés et tofu
+        init_message = True
+    elif "o" in conv :
+        new_eph = False # Il y a un message non acquitté, donc on reste sur la même session (peut-être)
+    
+    if init_message :    
+        #TEST existance ? => clés sur le serveurs ?
+        exist = False
+        with open(server_key_path,'r') as f :
+            for line in f.readlines() :
+                if line.split(",")[0] == receiver :
+                    exist = True
+        if not exist:
+            print (receiver+" n'existe pas.\n\n")
+            time.sleep(2)
+            return #on quitte la fonction et on retourne au menu principal
+    else :
+       exist = True 
+
+
+    name = input("Entrez le nom du fichier à envoyer : ")
+
+    try:
+        with open(name,'rb') as f :
+            data = f.read()
+            f.close()
+            file_name = ":"
+            file_name += name
+            data += bytes(file_name,'utf-8')
+
+    except:
+        print ("ERREUR : Le fichier",name," n'existe pas")
+        pass
+    keys = ""
+
+
+    # START DOUBLE RATCHET
+    with open (personnal_keys,'r') as f : # ici on essaie de chopper les valeurs du ratchet précédent si elles existent 
+        for line in f.readlines():
+            if line.split(",")[0] == receiver : # FORMAT : name,root_key, his public id, the session last key
+                root_key    = int(line.split(",")[1]) # aller retrouver la root_key actuelle
+                id_pub      = int(line.split(",")[2]) # retrouver l'ID publique de l'autre 
+                session_key = int(line.split(",")[3]) # retrouver le dernier secret partagé utilisé 
+
+
+
+    
+    if init_message :
+        # X3DH si premier message ............
+        (root_key,id_pub,session_key,num_otPK,eph_pub) = x3dh_send(receiver,my_id_priv) 
+        keys += str(num_otPK)+":"+str(my_id_pub)+":"+str(eph_pub)
+        #Le HKDF sur la root_key est effectué dans le x3dh (je crois)
+        x = hkdf(4096,session_key,APP_SALT)
+        session_key = int.from_bytes(x[:256],'little')
+        comm_key = int.from_bytes(x[256:],'little')
+
+    # END DOUBLE RATCHET
+
+    if not init_message :
+
+        keys += "NONE:"+str(my_id_pub)+":"
+        if not new_eph :#si on garde notre session on ne met que la session key à jour 
+            x = hkdf(4096,session_key,APP_SALT)
+            session_key = int.from_bytes(x[:256],'little')
+            comm_key = int.from_bytes(x[256:],'little') #Enfin on a la clé de chiffrement du message 
+
+            #tricks pour rester dans la même session, on n'envoie pas de key sur le deuxième message
+            keys+="NONE"
+
+        if new_eph:
+            #création d'une clé ephemère 
+            (eph_priv,eph_pub) = key_creator(4,p,g) # Création d'un clé éphémère 
+            #calcul de la clé partagée correspondante
+            shared_key = diffie_hellman(eph_priv,id_pub) 
+
+            #on envoie la partie publique de notre clé ephemère
+            keys += str(eph_pub) 
+
+            # Premier HKDF
+            x = hkdf(4096,root_key,shared_key)#on fait le hkdf ave la shared_key 
+            root_key = int.from_bytes(x[:256],'little')
+            session_key = int.from_bytes(x[256:],'little')
+
+            # Second HKDF
+            x = hkdf(4096,session_key,APP_SALT)
+            session_key = int.from_bytes(x[:256],'little')
+            comm_key = int.from_bytes(x[256:],'little')
+
+
+    if DEBUG : print("root : ",str(root_key),"\nsession : ",str(session_key),"\ncomm : ",str(comm_key))
+    
+    
+    # MAJ des keys local pour cette conversation
+    """
+    ATTENTION
+    Il faudrait normalement conserver les clés précédantes pendant un petit moment. 
+    On ignore le problèmes d'un mauvais ordre d'arrivé des messages pour le moment.
+    """
+    payload = receiver+","+str(root_key)+","+str(id_pub)+","+str(session_key)+"\n"# FORMAT : name,root_key, his public id, the session last key
+    with open(personnal_keys,'r') as f : 
+        lines = f.readlines()
+    with open(personnal_keys, "w") as f:
+        for line in lines:
+            try :
+                if line.strip("\n").split(',')[0] == receiver: # on retrouve la ligne assigné à notre correspondant
+                    f.write(payload)
+                else :
+                    f.write(line)
+            except :
+                pass
+    #On doit créer une ligne si c'est l'init message
+    if init_message:
+        payload = "\n"+receiver+","+str(root_key)+","+str(id_pub)+","+str(session_key)
+        with open(personnal_keys, "a") as f:
+            f.write(payload)
+
+
+    
+    
+
+    
+
+    # chiffrement
+    data_bytes = data #déja sous la forme de bytes
+
+    encoded_message = encodeMessage(data_bytes,comm_key) #remplacer nom variable
+
+    if DEBUG: print(str(encoded_message))
+
+    hexa_encoded_message = encoded_message.hex()
+
+    # Signature 
+    (x,y)=generate_sign(hexa_encoded_message,p,q,g,my_id_priv)
+    signature=str(x)+":"+str(y) # on concatène les deux parties de la signature 
+
+    # ID
+    msg_id = str(random.randint(10000, 100000))
+    # date 
+    date = str(int(time.time()))
+    # type du message 
+    msg_type = "FILE"
+    # stocker le message sur le serveur
+    with open(server_msg_path,'a') as f :
+
+        output = "\n"+myID+","+receiver+","+msg_id+","+date+","+hexa_encoded_message+","+msg_type+","+keys+","+signature #origin,dest,id,date,data=ACK,type=ACK,keys,signature
+        f.write(output)
+     # stocker le message en local ATTENTION A mettre le message en clair en local
+    with open(personnal_msg,'a') as f:
+            output = "\n"+myID+","+receiver+","+ msg_id+","+"False"+","+date+","+"un fichier" #sender, receiver, id, ack, date, msg 
+            f.write(output)
+
+    print("\nLe fichier a été envoyé\n")
 
 
 
@@ -483,7 +706,7 @@ if __name__=="__main__":
 
     RUNNING = True
     while RUNNING : 
-        action = input("Que voulez vous faire ?\n [r] Raffraichir les messages\n [a] Afficher une conversation\n [e] Envoyer un message\n [q] Quitter\n => ")
+        action = input("Que voulez vous faire ?\n [r] Raffraichir les messages\n [a] Afficher une conversation\n [e] Envoyer un message\n [f] Envoyer un fichier\n [q] Quitter\n => ")
         if action == "r":
             check_msg()
         if action == "e":
@@ -491,6 +714,8 @@ if __name__=="__main__":
         if action == "a" :
             nom = input("Qui ? : ")
             check_conv(nom,0)
+        if action == "f" :
+            send_file()
         if action == "q" :
             print(" ##### Au revoir ##### ")
             RUNNING = False

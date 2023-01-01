@@ -1,5 +1,9 @@
 from random import randint
+import random
 
+#création d'une PBox à utiliser dans la fonction de
+#PBox = list(range(256))
+#random.shuffle(PBox)
 
 
 BLOC_SIZE = 512 #taille en bits d'un bloc à chiffrer
@@ -7,13 +11,12 @@ BYTESBLOC_SIZE = BLOC_SIZE//8 #taille en byte d'un bloc à chiffrer
 ROUNDS = 50
 
 #fonction d'encodage d'un message
-def encodeMessage(message:bytes,key:bytes):
+def encodeMessage(message:bytes,key:int):
 
-    #bourrage du message
-    reste = len(message) % BYTESBLOC_SIZE
-    message = message + b'\x00' * (BLOC_SIZE//8 - reste)
+    #troncage de la clé passée en entrée
+    key %= 2**(BLOC_SIZE//2)
 
-    nbBlocs = len(message)//BYTESBLOC_SIZE
+    nbBlocs = len(message)//BYTESBLOC_SIZE + 1
     
     cipherMessage=b''
 
@@ -25,11 +28,12 @@ def encodeMessage(message:bytes,key:bytes):
     return cipherMessage
 
 #fonction de decodage d'un message
-def decodeMessage(message:bytes,key:bytes):
+def decodeMessage(message:bytes,key:int):
+
+    #troncage de la clé passée en entrée
+    key %= 2**(BLOC_SIZE//2)
     
     nbBlocs = len(message)//BYTESBLOC_SIZE
-
-    print("nbBlocs : ",nbBlocs)
 
     clearMessage=b''
 
@@ -38,6 +42,10 @@ def decodeMessage(message:bytes,key:bytes):
         
         subMessage = message[i*BYTESBLOC_SIZE:(i+1)*(BYTESBLOC_SIZE)] #taille BYTESBLOC_SIZE octets
         clearMessage += int.to_bytes(decodeBloc(int.from_bytes(subMessage, 'little'),key), BYTESBLOC_SIZE,'little')
+
+    #supression du padding
+    clearMessage = clearMessage.decode().strip('\x00').encode()
+    
     return clearMessage
 
 #fonction d'encodage d'un bloc
@@ -63,7 +71,9 @@ def encodeBloc(bloc,key): #bloc de type int
 def decodeBloc(bloc,key):
     
     #séparation du bloc en parties gauche et droite
-    left, right = splitBloc(bloc)
+    left, right = splitBloc(bloc)   
+
+    KEY = key
 
     for i in range(ROUNDS):
 
@@ -86,6 +96,12 @@ def splitBloc(bloc):
     right = bloc & (2**(BLOC_SIZE//2)-1)
     return left,right
 
+def int2bin(n):
+    return [int(digit) for digit in bin(n)[2:]] # [2:] to chop off the "0b" part
+
+def bin2int(bin):
+    return eval('0b' + ''.join(str(n) for n in bin))
+
 
 #fonction de permutation de feistel : opérations à appliquer sur le bloc à partir de constantes et de la clé
 def feistel(bloc, key):
@@ -97,6 +113,17 @@ def feistel(bloc, key):
     #opération linéaire
     bloc = bloc*(key + h1) + h2
 
+    #permutation des bits via des P-boxs
+    #binBloc = int2bin(bloc)
+
+    #bloc = [0]*256
+
+    #for i in range (len(binBloc)):
+    #    if PBox[i] < len(binBloc):
+    #        bloc[i] = binBloc[PBox[i]]
+
+    #bloc = bin2int(bloc)
+
     #opérations binaires
     bloc ^= key
     bloc += key
@@ -104,16 +131,13 @@ def feistel(bloc, key):
     return bloc%(2**(BLOC_SIZE//2))
 
 
-if __name__=='__main__': 
-    with open('files/Capture.PNG','rb') as f :
 
-        message = f.read()
+if __name__=='__main__':  
+    message = b'b  aaaaaaaaaaaavghrtrtrtrtrtrtrtrt                    htrhtrhtr                '*35
     KEY = randint(2**(BLOC_SIZE//2-1),2**(BLOC_SIZE//2))
     cipher = encodeMessage(message,KEY)
-    with open('files/coded_img.png','ab') as f :
-        f.write(cipher)
     print("cipher message:",cipher)
     print("")
-    #print(decodeMessage(cipher, KEY))
-    with open('files/decoded_img.png','ab') as f :
-        f.write(decodeMessage(cipher, KEY))
+    print(decodeMessage(cipher, KEY))
+
+
