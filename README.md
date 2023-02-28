@@ -1,5 +1,7 @@
 # crypto_message_gs15
 
+marceau.vienne@utt.fr/eliott.tessier@utt.fr
+
 Petit projet de cryptographie qui se base de concepts de l'application de messagerie Signal:
 - X3DH
 - RC4
